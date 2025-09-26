@@ -1,0 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Optional: a tiny reset + body font */
+:root { color-scheme: light dark; }
+html, body { height: 100%; }
