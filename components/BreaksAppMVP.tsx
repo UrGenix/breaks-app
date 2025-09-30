@@ -70,14 +70,13 @@ function Section({ title, icon, children, defaultOpen=false }: { title: string; 
   );
 }
 function BigButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const { className, ...rest } = props;
   return (
     <button
-      {...props}
+      {...rest}
       className={
-        "h-12 rounded-2xl text-base font-medium px-4 " +
-        "bg-indigo-600 text-white active:scale-[0.99] shadow " +
-        "disabled:opacity-50 disabled:cursor-not-allowed " +
-        (props.className || "")
+        "h-12 rounded-2xl text-base font-medium px-4 bg-indigo-600 text-white active:scale-[0.99] shadow disabled:opacity-50 disabled:cursor-not-allowed " +
+        (className || "")
       }
     />
   );
@@ -91,7 +90,6 @@ export default function BreaksAppMVP() {
   const [start, setStart] = useState("09:00");
   const [end, setEnd] = useState("10:10");
 
-  // query state kept minimal for mobile
   const [queryName, setQueryName] = useState("");
   const [queryDay, setQueryDay] = useState<Day>(DAYS[new Date().getDay()-1] || "Monday");
   const [queryTime, setQueryTime] = useState(()=>{
@@ -131,8 +129,7 @@ export default function BreaksAppMVP() {
     setBlocks(prev => [...prev, { id: uid(), name: name.trim(), day, start, end }].sort((a,b)=>
       a.name.localeCompare(b.name) || dayIdx[a.day]-dayIdx[b.day] || parseHHMM(a.start)-parseHHMM(b.start)
     ));
-    // quick mobile QoL: keep name/day, reset times
-    setStart("09:00"); setEnd("10:10");
+    setStart("09:00"); setEnd("10:10"); // quick reset for mobile flow
   }
   function deleteBlock(id: string){ setBlocks(prev => prev.filter(b=>b.id!==id)); }
   function clearAll(){ if (confirm("Clear all blocks?")) setBlocks([]); }
@@ -149,7 +146,6 @@ export default function BreaksAppMVP() {
     }
     return [...everyone].filter(n=>!busy.has(n)).sort();
   };
-
   const personBreaksToday = (nameQ: string, dayQ: Day) => {
     const key = `${nameQ}__${dayQ}`;
     const ivals = byPersonDay.get(key) || [];
@@ -180,6 +176,20 @@ export default function BreaksAppMVP() {
     reader.readAsText(f);
   }
 
+  /* --- Section refs + navigator --- */
+  const addRef = useRef<HTMLDivElement>(null);
+  const freeRef = useRef<HTMLDivElement>(null);
+  const peopleRef = useRef<HTMLDivElement>(null);
+  const blocksRef = useRef<HTMLDivElement>(null);
+
+  function goTo(ref: React.RefObject<HTMLDivElement>) {
+    const el = ref.current;
+    if (!el) return;
+    const details = el.querySelector("details") as HTMLDetailsElement | null;
+    if (details) details.open = true; // auto-open accordion
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
     <div className="min-h-svh bg-gradient-to-b from-indigo-50 to-slate-100 dark:from-slate-900 dark:to-slate-950 text-slate-800 dark:text-slate-100">
       {/* Top bar */}
@@ -190,158 +200,181 @@ export default function BreaksAppMVP() {
             <div className="font-semibold">Breaks</div>
             <div className="text-xs text-slate-500 dark:text-slate-400">Who’s free & when</div>
           </div>
-          <label className="text-sm px-3 py-2 rounded-xl border bg-white/70 dark:bg-slate-900/40 cursor-pointer">
+          <label className="text-sm px-3 py-2 rounded-2xl border bg-white/70 dark:bg-slate-900/40 cursor-pointer">
             Import CSV
             <input ref={fileRef} type="file" accept=".csv" onChange={onCSVFile} className="hidden" />
           </label>
-          <button onClick={downloadCSV} className="text-sm px-3 py-2 rounded-xl border bg-white/70 dark:bg-slate-900/40">Export</button>
+          <button onClick={downloadCSV} className="text-sm px-3 py-2 rounded-2xl border bg-white/70 dark:bg-slate-900/40">Export</button>
         </div>
       </header>
 
       {/* Content */}
       <main className="max-w-3xl mx-auto px-4 py-4 grid gap-4 pb-24">
         {/* Add block */}
-        <Card className="p-4">
-          <Section title="Add lesson block" icon="➕" defaultOpen>
-            <div className="grid grid-cols-1 gap-3">
-              <input
-                value={name} onChange={e=>setName(e.target.value)}
-                placeholder="Name (e.g. Niyam)" inputMode="text"
-                className="h-12 px-4 rounded-2xl border bg-white/80 dark:bg-slate-900/40"
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <select
-                  value={day} onChange={e=>setDay(e.target.value as Day)}
+        <div ref={addRef}>
+          <Card className="p-4">
+            <Section title="Add lesson block" icon="➕" defaultOpen>
+              <div className="grid grid-cols-1 gap-3">
+                <input
+                  value={name} onChange={e=>setName(e.target.value)}
+                  placeholder="Name (e.g. Niyam)" inputMode="text"
                   className="h-12 px-4 rounded-2xl border bg-white/80 dark:bg-slate-900/40"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <select
+                    value={day} onChange={e=>setDay(e.target.value as Day)}
+                    className="h-12 px-4 rounded-2xl border bg-white/80 dark:bg-slate-900/40"
+                  >
+                    {DAYS.map(d=> <option key={d} value={d}>{d}</option>)}
+                  </select>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input value={start} onChange={e=>setStart(e.target.value)} type="time" className="h-12 px-4 rounded-2xl border bg-white/80 dark:bg-slate-900/40" />
+                    <input value={end} onChange={e=>setEnd(e.target.value)} type="time" className="h-12 px-4 rounded-2xl border bg-white/80 dark:bg-slate-900/40" />
+                  </div>
+                </div>
+                <BigButton onClick={addBlock}>Add block</BigButton>
+                <button onClick={clearAll} className="h-12 rounded-2xl border bg-white/60 dark:bg-slate-900/40">Clear all</button>
+              </div>
+            </Section>
+          </Card>
+        </div>
+
+        {/* Who's free */}
+        <div ref={freeRef}>
+          <Card className="p-0">
+            <Section title="Who’s free now?" icon="🕒" defaultOpen>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <select
+                  value={queryDay} onChange={e=>setQueryDay(e.target.value as Day)}
+                  className="h-12 px-4 rounded-2xl border bg-white/80 dark:bg-slate-900/40 col-span-1"
                 >
                   {DAYS.map(d=> <option key={d} value={d}>{d}</option>)}
                 </select>
-                <div className="grid grid-cols-2 gap-3">
-                  <input value={start} onChange={e=>setStart(e.target.value)} type="time" className="h-12 px-4 rounded-2xl border bg-white/80 dark:bg-slate-900/40" />
-                  <input value={end} onChange={e=>setEnd(e.target.value)} type="time" className="h-12 px-4 rounded-2xl border bg-white/80 dark:bg-slate-900/40" />
-                </div>
+                <input value={queryTime} onChange={e=>setQueryTime(e.target.value)} type="time" className="h-12 px-4 rounded-2xl border bg-white/80 dark:bg-slate-900/40" />
               </div>
-              <BigButton onClick={addBlock}>Add block</BigButton>
-              <button onClick={clearAll} className="h-12 rounded-2xl border bg-white/60 dark:bg-slate-900/40">Clear all</button>
-            </div>
-          </Section>
-        </Card>
-
-        {/* Who's free */}
-        <Card className="p-0">
-          <Section title="Who’s free now?" icon="🕒" defaultOpen>
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <select
-                value={queryDay} onChange={e=>setQueryDay(e.target.value as Day)}
-                className="h-12 px-4 rounded-2xl border bg-white/80 dark:bg-slate-900/40 col-span-1"
-              >
-                {DAYS.map(d=> <option key={d} value={d}>{d}</option>)}
-              </select>
-              <input value={queryTime} onChange={e=>setQueryTime(e.target.value)} type="time" className="h-12 px-4 rounded-2xl border bg-white/80 dark:bg-slate-900/40" />
-            </div>
-            <ul className="grid gap-2">
-              {freeAt(queryDay, queryTime).map(n => (
-                <li key={n} className="px-3 py-3 rounded-xl bg-slate-100/80 dark:bg-slate-800/70">{n}</li>
-              ))}
-              {!freeAt(queryDay, queryTime).length && <li className="text-sm text-slate-500">No one free.</li>}
-            </ul>
-          </Section>
-        </Card>
+              <ul className="grid gap-2">
+                {freeAt(queryDay, queryTime).map(n => (
+                  <li key={n} className="px-3 py-3 rounded-xl bg-slate-100/80 dark:bg-slate-800/70">{n}</li>
+                ))}
+                {!freeAt(queryDay, queryTime).length && <li className="text-sm text-slate-500">No one free.</li>}
+              </ul>
+            </Section>
+          </Card>
+        </div>
 
         {/* Breaks for a person */}
-        <Card className="p-0">
-          <Section title="Breaks for a person" icon="☕">
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <select
-                value={queryName} onChange={e=>setQueryName(e.target.value)}
-                className="h-12 px-4 rounded-2xl border bg-white/80 dark:bg-slate-900/40 col-span-2"
-              >
-                <option value="">Select person</option>
-                {people.map(p=> <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-            {!queryName && <p className="text-sm text-slate-500">Pick a name to see their breaks.</p>}
-            {!!queryName && (
-              <ul className="grid gap-2">
-                {personBreaksToday(queryName, queryDay).map(([s,e], i) => {
-                  const mins = e - s; const h = Math.floor(mins/60), m = mins%60;
-                  const dur = h ? `${h}h ${m}m` : `${m} mins`;
-                  return (
-                    <li key={i} className="px-3 py-3 rounded-xl bg-slate-100/80 dark:bg-slate-800/70">
-                      {fmt(s)}–{fmt(e)} <span className="text-slate-500">({dur})</span>
-                    </li>
-                  );
-                })}
-                {!personBreaksToday(queryName, queryDay).length && <li className="text-sm text-slate-500">No breaks today.</li>}
-              </ul>
-            )}
-          </Section>
-        </Card>
+        <div ref={peopleRef}>
+          <Card className="p-0">
+            <Section title="Breaks for a person" icon="☕">
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <select
+                  value={queryName} onChange={e=>setQueryName(e.target.value)}
+                  className="h-12 px-4 rounded-2xl border bg-white/80 dark:bg-slate-900/40 col-span-2"
+                >
+                  <option value="">Select person</option>
+                  {people.map(p=> <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              {!queryName && <p className="text-sm text-slate-500">Pick a name to see their breaks.</p>}
+              {!!queryName && (
+                <ul className="grid gap-2">
+                  {personBreaksToday(queryName, queryDay).map(([s,e], i) => {
+                    const mins = e - s; const h = Math.floor(mins/60), m = mins%60;
+                    const dur = h ? `${h}h ${m}m` : `${m} mins`;
+                    return (
+                      <li key={i} className="px-3 py-3 rounded-xl bg-slate-100/80 dark:bg-slate-800/70">
+                        {fmt(s)}–{fmt(e)} <span className="text-slate-500">({dur})</span>
+                      </li>
+                    );
+                  })}
+                  {!personBreaksToday(queryName, queryDay).length && <li className="text-sm text-slate-500">No breaks today.</li>}
+                </ul>
+              )}
+            </Section>
+          </Card>
+        </div>
 
         {/* All blocks */}
-        <Card className="p-0">
-          <Section title="All lesson blocks" icon="📋">
-            {/* Mobile: cards */}
-            <div className="grid gap-2 md:hidden">
-              {[...blocks].sort((a,b)=>
-                a.name.localeCompare(b.name) || dayIdx[a.day]-dayIdx[b.day] || parseHHMM(a.start)-parseHHMM(b.start)
-              ).map(b=>(
-                <div key={b.id} className="rounded-xl border bg-white/80 dark:bg-slate-900/50 p-3 flex items-center gap-3">
-                  <div className="min-w-0">
-                    <div className="font-medium">{b.name}</div>
-                    <div className="text-xs text-slate-500">{b.day} • {b.start}–{b.end}</div>
+        <div ref={blocksRef}>
+          <Card className="p-0">
+            <Section title="All lesson blocks" icon="📋">
+              {/* Mobile: cards */}
+              <div className="grid gap-2 md:hidden">
+                {[...blocks].sort((a,b)=>
+                  a.name.localeCompare(b.name) || dayIdx[a.day]-dayIdx[b.day] || parseHHMM(a.start)-parseHHMM(b.start)
+                ).map(b=>(
+                  <div key={b.id} className="rounded-xl border bg-white/80 dark:bg-slate-900/50 p-3 flex items-center gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium">{b.name}</div>
+                      <div className="text-xs text-slate-500">{b.day} • {b.start}–{b.end}</div>
+                    </div>
+                    <button onClick={()=>deleteBlock(b.id)} className="ml-auto px-3 h-9 rounded-xl bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-200">Delete</button>
                   </div>
-                  <button onClick={()=>deleteBlock(b.id)} className="ml-auto px-3 h-9 rounded-xl bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-200">Delete</button>
-                </div>
-              ))}
-              {!blocks.length && <p className="text-sm text-slate-500">No blocks yet. Add some above or import CSV.</p>}
-            </div>
+                ))}
+                {!blocks.length && <p className="text-sm text-slate-500">No blocks yet. Add some above or import CSV.</p>}
+              </div>
 
-            {/* Desktop: table */}
-            <div className="hidden md:block overflow-x-auto rounded-xl border border-white/20 dark:border-white/10">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left bg-slate-100 dark:bg-slate-800">
-                    <th className="p-2">Name</th>
-                    <th className="p-2">Day</th>
-                    <th className="p-2">Start</th>
-                    <th className="p-2">End</th>
-                    <th className="p-2 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...blocks].sort((a,b)=>
-                    a.name.localeCompare(b.name) || dayIdx[a.day]-dayIdx[b.day] || parseHHMM(a.start)-parseHHMM(b.start)
-                  ).map(b=>(
-                    <tr key={b.id} className="border-t border-white/10">
-                      <td className="p-2">{b.name}</td>
-                      <td className="p-2">{b.day}</td>
-                      <td className="p-2">{b.start}</td>
-                      <td className="p-2">{b.end}</td>
-                      <td className="p-2 text-right">
-                        <button onClick={()=>deleteBlock(b.id)} className="px-2 py-1 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-200">Delete</button>
-                      </td>
+              {/* Desktop: table */}
+              <div className="hidden md:block overflow-x-auto rounded-xl border border-white/20 dark:border-white/10">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left bg-slate-100 dark:bg-slate-800">
+                      <th className="p-2">Name</th>
+                      <th className="p-2">Day</th>
+                      <th className="p-2">Start</th>
+                      <th className="p-2">End</th>
+                      <th className="p-2 text-right">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Section>
-        </Card>
+                  </thead>
+                  <tbody>
+                    {[...blocks].sort((a,b)=>
+                      a.name.localeCompare(b.name) || dayIdx[a.day]-dayIdx[b.day] || parseHHMM(a.start)-parseHHMM(b.start)
+                    ).map(b=>(
+                      <tr key={b.id} className="border-t border-white/10">
+                        <td className="p-2">{b.name}</td>
+                        <td className="p-2">{b.day}</td>
+                        <td className="p-2">{b.start}</td>
+                        <td className="p-2">{b.end}</td>
+                        <td className="p-2 text-right">
+                          <button onClick={()=>deleteBlock(b.id)} className="px-2 py-1 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-200">Delete</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
+          </Card>
+        </div>
       </main>
 
       {/* Bottom Nav (mobile) */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 dark:bg-slate-900/80 backdrop-blur border-t border-white/20 dark:border-white/10">
-        <div className="max-w-3xl mx-auto grid grid-cols-3">
-          <button className="h-14 text-sm flex flex-col items-center justify-center gap-1">🏠<span>Home</span></button>
+        <div className="max-w-3xl mx-auto grid grid-cols-4">
           <button
-            onClick={()=>window.scrollTo({ top: 0, behavior: "smooth" })}
-            className="h-14 text-sm flex flex-col items-center justify-center gap-1 text-indigo-600"
-          >➕<span>Add</span></button>
-          <button
-            onClick={()=>document.querySelector("select")?.focus()}
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             className="h-14 text-sm flex flex-col items-center justify-center gap-1"
-          >👥<span>People</span></button>
+          >
+            🏠<span>Top</span>
+          </button>
+          <button
+            onClick={() => goTo(addRef)}
+            className="h-14 text-sm flex flex-col items-center justify-center gap-1 text-indigo-600"
+          >
+            ➕<span>Add</span>
+          </button>
+          <button
+            onClick={() => goTo(peopleRef)}
+            className="h-14 text-sm flex flex-col items-center justify-center gap-1"
+          >
+            👥<span>People</span>
+          </button>
+          <button
+            onClick={() => goTo(blocksRef)}
+            className="h-14 text-sm flex flex-col items-center justify-center gap-1"
+          >
+            📋<span>Blocks</span>
+          </button>
         </div>
       </nav>
     </div>
