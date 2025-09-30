@@ -13,7 +13,8 @@ type Block = {
 
 // --- Helpers ---
 const DAYS: Day[] = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
-const dayIdx: Record<Day, number> = Object.fromEntries(DAYS.map((d,i)=>[d,i])) as any;
+const dayIdx = Object.fromEntries(DAYS.map((d, i) => [d, i])) as Record<Day, number>;
+
 
 function parseHHMM(s: string): number { // minutes since midnight
   const [h,m] = s.split(":").map(Number);
