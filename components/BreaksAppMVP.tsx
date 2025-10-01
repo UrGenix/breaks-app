@@ -182,7 +182,8 @@ export default function BreaksAppMVP() {
   const peopleRef = useRef<HTMLDivElement>(null);
   const blocksRef = useRef<HTMLDivElement>(null);
 
-  function goTo(ref: React.RefObject<HTMLDivElement>) {
+  // TS-safe: accepts refs that can be null
+  function goTo(ref: React.RefObject<HTMLElement | null>) {
     const el = ref.current;
     if (!el) return;
     const details = el.querySelector("details") as HTMLDetailsElement | null;
