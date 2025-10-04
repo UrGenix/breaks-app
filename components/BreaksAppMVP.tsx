@@ -1,7 +1,7 @@
-// components/BreaksAppMVP.tsx
 "use client";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+/* ---------------- Types ---------------- */
 type Day = "Monday"|"Tuesday"|"Wednesday"|"Thursday"|"Friday"|"Saturday"|"Sunday";
 
 type Block = {
@@ -10,9 +10,10 @@ type Block = {
   day: Day;
   start: string; // HH:MM
   end: string;   // HH:MM
-  room: string;  // NEW
+  room: string;  // used for filters
 };
 
+/* --------------- Helpers --------------- */
 const DAYS: Day[] = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const dayIdx: Record<Day, number> = Object.fromEntries(DAYS.map((d,i)=>[d,i])) as any;
 
@@ -31,7 +32,7 @@ function gapsBetween(intervals: [number, number][]): [number, number][] {
   return gaps;
 }
 
-// CSV helpers (Name,Day,Start,End,Room)
+/* -------- CSV helpers (Name,Day,Start,End,Room) -------- */
 function toCSV(blocks: Block[]): string {
   const header = "Name,Day,Start,End,Room";
   const lines = blocks.map(b => [b.name, b.day, b.start, b.end, (b.room||"")].join(","));
@@ -64,28 +65,55 @@ function fromCSV(text: string): Block[] {
   return out;
 }
 
-const LS_KEY = "breaks-mvp-blocks@with-room";
+/* --------------- Local storage --------------- */
+const LS_KEY = "breaks-mvp-blocks@v2";
+const THEME_KEY = "breaks-theme"; // "light" | "dark" | "system"
 
+/* ----------- Theme hook (dark/light) ----------- */
+function useTheme(){
+  const [mode, setMode] = useState<"light"|"dark">("light");
+  useEffect(()=>{
+    // initial: respect saved pref or system
+    const saved = localStorage.getItem(THEME_KEY);
+    const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+    const initial = (saved==="dark"||saved==="light") ? saved : (prefersDark? "dark":"light");
+    setMode(initial);
+    document.documentElement.classList.toggle("dark", initial==="dark");
+  },[]);
+  const toggle = ()=>{
+    setMode(m=>{
+      const next = m==="dark" ? "light":"dark";
+      localStorage.setItem(THEME_KEY, next);
+      document.documentElement.classList.toggle("dark", next==="dark");
+      return next;
+    });
+  };
+  return { mode, toggle };
+}
+
+/* ------------------- UI ------------------- */
 export default function BreaksAppMVP(){
+  const { mode, toggle } = useTheme();
+
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [name, setName] = useState("");
   const [day, setDay] = useState<Day>("Monday");
   const [start, setStart] = useState("09:00");
   const [end, setEnd] = useState("10:10");
-  const [room, setRoom] = useState(""); // NEW
+  const [room, setRoom] = useState("");
 
   const [queryDay, setQueryDay] = useState<Day>(DAYS[new Date().getDay()-1] || "Monday");
   const [queryTime, setQueryTime] = useState(()=>{
     const d=new Date(); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
   });
-  const [roomFilter, setRoomFilter] = useState<string>(""); // NEW: dropdown filter
+  const [roomFilter, setRoomFilter] = useState<string>("");
 
   // load/save
   useEffect(()=>{ try{ const raw=localStorage.getItem(LS_KEY); if(raw) setBlocks(JSON.parse(raw)); }catch{} },[]);
   useEffect(()=>{ try{ localStorage.setItem(LS_KEY, JSON.stringify(blocks)); }catch{} },[blocks]);
 
   const people = useMemo(()=> Array.from(new Set(blocks.map(b=>b.name))).sort(), [blocks]);
-  const rooms = useMemo(()=> ["", ...Array.from(new Set(blocks.map(b=>b.room).filter(Boolean))).sort()], [blocks]); // "" = All
+  const rooms = useMemo(()=> ["", ...Array.from(new Set(blocks.map(b=>b.room).filter(Boolean))).sort()], [blocks]);
 
   const byPersonDay = useMemo(()=>{
     const map = new Map<string, [number,number][]>();
@@ -110,12 +138,13 @@ export default function BreaksAppMVP(){
   function deleteBlock(id:string){ setBlocks(prev=>prev.filter(b=>b.id!==id)); }
   function clearAll(){ if(confirm("Clear all blocks?")) setBlocks([]); }
 
-  // helpers for room-filtered "Who’s free?"
+  // room filter helper
   function personHasRoomToday(name: string, dayQ: Day, roomQ: string){
-    if(!roomQ) return true; // no filter
+    if(!roomQ) return true;
     return blocks.some(b => b.name===name && b.day===dayQ && (b.room||"").toLowerCase()===roomQ.toLowerCase());
   }
 
+  // CSV
   const fileRef = useRef<HTMLInputElement>(null);
   function downloadCSV(){
     const csv = toCSV(blocks);
@@ -133,75 +162,111 @@ export default function BreaksAppMVP(){
       setBlocks(prev => [...prev, ...toAdd].sort((a,b)=>
         a.name.localeCompare(b.name) || dayIdx[a.day]-dayIdx[b.day] || parseHHMM(a.start)-parseHHMM(b.start)
       ));
-      if(fileRef.current) fileRef.current.value="";
+      if (fileRef.current) fileRef.current.value="";
     };
     reader.readAsText(f);
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 p-6">
-      <div className="max-w-6xl mx-auto grid gap-6">
-
+    <div className="min-h-screen bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100 transition-colors">
+      <div className="max-w-6xl mx-auto p-4 sm:p-6 md:p-8 grid gap-6">
+        {/* Header */}
         <header className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Breaks App – MVP</h1>
-          <div className="flex gap-2">
-            <button onClick={downloadCSV} className="px-3 py-2 rounded-xl bg-white shadow border hover:bg-slate-100">Export CSV</button>
-            <label className="px-3 py-2 rounded-xl bg-white shadow border hover:bg-slate-100 cursor-pointer">
+          <h1 className="text-2xl font-bold tracking-tight">Breaks App – MVP</h1>
+          <div className="flex items-center gap-2">
+            <button onClick={downloadCSV}
+              className="px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-sm hover:bg-slate-50
+                         dark:bg-slate-900 dark:border-slate-800 dark:hover:bg-slate-800">
+              Export CSV
+            </button>
+            <label className="px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-sm hover:bg-slate-50 cursor-pointer
+                               dark:bg-slate-900 dark:border-slate-800 dark:hover:bg-slate-800">
               Import CSV
               <input ref={fileRef} type="file" accept=".csv" onChange={onCSVFile} className="hidden" />
             </label>
-            <button onClick={clearAll} className="px-3 py-2 rounded-xl bg-white shadow border hover:bg-red-50">Clear All</button>
+            <button onClick={clearAll}
+              className="px-3 py-2 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100
+                         dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-900/60 dark:hover:bg-rose-900/50">
+              Clear
+            </button>
+
+            {/* Theme toggle */}
+            <button onClick={toggle}
+              title={`Switch to ${mode==="dark"?"light":"dark"} mode`}
+              className="ml-2 h-10 w-10 rounded-xl grid place-items-center border border-slate-200 bg-white hover:bg-slate-50
+                         dark:bg-slate-900 dark:border-slate-800 dark:hover:bg-slate-800">
+              {mode==="dark" ? "🌞" : "🌙"}
+            </button>
           </div>
         </header>
 
         {/* Add Block */}
-        <section className="bg-white rounded-2xl shadow p-4 grid gap-3">
-          <h2 className="font-semibold">Add lesson block</h2>
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-            <input value={name} onChange={e=>setName(e.target.value)} placeholder="Name" className="px-3 py-2 rounded-xl border" />
-            <select value={day} onChange={e=>setDay(e.target.value as Day)} className="px-3 py-2 rounded-xl border">
+        <section
+          className="rounded-2xl border shadow-sm overflow-hidden
+                     bg-gradient-to-br from-cyan-50 to-sky-50
+                     dark:from-slate-900 dark:to-slate-900 dark:border-slate-800">
+          <div className="p-4 border-b border-sky-100/70 dark:border-slate-800">
+            <h2 className="font-semibold">Add lesson block</h2>
+          </div>
+          <div className="p-4 grid grid-cols-1 md:grid-cols-6 gap-3">
+            <input value={name} onChange={e=>setName(e.target.value)} placeholder="Name"
+                   className="px-3 py-2 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800" />
+            <select value={day} onChange={e=>setDay(e.target.value as Day)}
+                    className="px-3 py-2 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
               {DAYS.map(d=><option key={d} value={d}>{d}</option>)}
             </select>
-            <input value={start} onChange={e=>setStart(e.target.value)} type="time" className="px-3 py-2 rounded-xl border" />
-            <input value={end} onChange={e=>setEnd(e.target.value)} type="time" className="px-3 py-2 rounded-xl border" />
-            <input value={room} onChange={e=>setRoom(e.target.value)} placeholder="Room (e.g. E102)" className="px-3 py-2 rounded-xl border" />
-            <button onClick={addBlock} className="px-3 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800">Add</button>
+            <input value={start} onChange={e=>setStart(e.target.value)} type="time"
+                   className="px-3 py-2 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800" />
+            <input value={end} onChange={e=>setEnd(e.target.value)} type="time"
+                   className="px-3 py-2 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800" />
+            <input value={room} onChange={e=>setRoom(e.target.value)} placeholder="Room (e.g. E102)"
+                   className="px-3 py-2 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800" />
+            <button onClick={addBlock}
+              className="px-3 py-2 rounded-xl bg-sky-600 text-white hover:bg-sky-700 active:bg-sky-800 transition-colors">
+              Add
+            </button>
           </div>
-          <p className="text-sm text-slate-500">Rooms are now saved and included in CSV import/export.</p>
+          <p className="px-4 pb-4 text-sm text-slate-600 dark:text-slate-400">Rooms are saved and included in CSV import/export.</p>
         </section>
 
         {/* Queries */}
         <section className="grid md:grid-cols-3 gap-6">
-          {/* Who's free (with Room filter) */}
-          <div className="bg-white rounded-2xl shadow p-4 grid gap-3">
-            <h3 className="font-semibold">Who’s free?</h3>
+          {/* Who’s free? */}
+          <div className="rounded-2xl border shadow-sm p-4 bg-white/80 backdrop-blur
+                          dark:bg-slate-900/70 dark:border-slate-800">
+            <h3 className="font-semibold mb-3">Who’s free?</h3>
             <div className="grid grid-cols-3 gap-2">
-              <select value={queryDay} onChange={e=>setQueryDay(e.target.value as Day)} className="px-3 py-2 rounded-xl border col-span-1">
+              <select value={queryDay} onChange={e=>setQueryDay(e.target.value as Day)}
+                      className="px-3 py-2 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
                 {DAYS.map(d=><option key={d} value={d}>{d}</option>)}
               </select>
-              <input value={queryTime} onChange={e=>setQueryTime(e.target.value)} type="time" className="px-3 py-2 rounded-xl border col-span-1" />
-              <select value={roomFilter} onChange={e=>setRoomFilter(e.target.value)} className="px-3 py-2 rounded-xl border col-span-1">
+              <input value={queryTime} onChange={e=>setQueryTime(e.target.value)} type="time"
+                     className="px-3 py-2 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800" />
+              <select value={roomFilter} onChange={e=>setRoomFilter(e.target.value)}
+                      className="px-3 py-2 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
                 {rooms.map(r => <option key={r||"__all"} value={r}>{r? r : "All rooms"}</option>)}
               </select>
             </div>
-            <FreeList blocks={blocks} day={queryDay} time={queryTime} roomFilter={roomFilter} roomCheck={personHasRoomToday} />
+            <FreeList blocks={blocks} day={queryDay} time={queryTime} roomFilter={roomFilter}
+                      roomCheck={(n,d,r)=>blocks.some(b=>b.name===n && b.day===d && (b.room||"").toLowerCase()===r.toLowerCase())} />
           </div>
 
           {/* Breaks for a person */}
-          <div className="bg-white rounded-2xl shadow p-4 grid gap-3">
-            <h3 className="font-semibold">Breaks for a person (today)</h3>
+          <div className="rounded-2xl border shadow-sm p-4 bg-white/80 dark:bg-slate-900/70 dark:border-slate-800">
+            <h3 className="font-semibold mb-3">Breaks for a person (today)</h3>
             <PersonBreaksPicker blocks={blocks} dayDefault={queryDay} />
           </div>
 
           {/* Common free */}
-          <div className="bg-white rounded-2xl shadow p-4 grid gap-3">
-            <h3 className="font-semibold">Common free at time</h3>
-            <CommonList day={queryDay} time={queryTime} names={[...new Set(blocks.map(b=>b.name))].sort()} byPersonDay={byPersonDay} />
+          <div className="rounded-2xl border shadow-sm p-4 bg-white/80 dark:bg-slate-900/70 dark:border-slate-800">
+            <h3 className="font-semibold mb-3">Common free at time</h3>
+            <CommonList day={queryDay} time={queryTime} names={[...new Set(blocks.map(b=>b.name))].sort()}
+                        byPersonDay={byPersonDay} />
           </div>
         </section>
 
         {/* Table */}
-        <section className="bg-white rounded-2xl shadow p-4">
+        <section className="rounded-2xl border shadow-sm p-4 bg-white/90 dark:bg-slate-900/70 dark:border-slate-800">
           <h2 className="font-semibold mb-3">All lesson blocks</h2>
           <BlocksTable blocks={blocks} onDelete={(id)=>deleteBlock(id)} />
         </section>
@@ -210,6 +275,7 @@ export default function BreaksAppMVP(){
   );
 }
 
+/* ---------------- subcomponents ---------------- */
 function FreeList({ blocks, day, time, roomFilter, roomCheck }:{
   blocks: Block[]; day: Day; time: string; roomFilter: string; roomCheck: (name:string, day:Day, room:string)=>boolean;
 }){
@@ -222,12 +288,14 @@ function FreeList({ blocks, day, time, roomFilter, roomCheck }:{
     if (s <= t && t < e) busy.add(b.name);
   }
   let free = everyone.filter(n=>!busy.has(n));
-  // NEW: room filter (keeps only people who have at least one lesson today in that room)
   if (roomFilter) free = free.filter(n => roomCheck(n, day, roomFilter));
 
   return (
-    <ul className="text-sm grid gap-1">
-      {free.length? free.map(n=> <li key={n} className="px-2 py-1 rounded bg-slate-100">{n}</li>) : <li className="text-slate-500">No one</li>}
+    <ul className="text-sm grid gap-2">
+      {free.length
+        ? free.map(n=> <li key={n} className="px-3 py-2 rounded-xl border border-teal-200 bg-teal-50 text-teal-900
+                                              dark:border-slate-800 dark:bg-slate-800 dark:text-slate-100">{n}</li>)
+        : <li className="text-slate-500 dark:text-slate-400">No one</li>}
     </ul>
   );
 }
@@ -249,35 +317,44 @@ function PersonBreaksPicker({ blocks, dayDefault }:{ blocks: Block[]; dayDefault
 
   return (
     <>
-      <select value={who} onChange={e=>setWho(e.target.value)} className="px-3 py-2 rounded-xl border">
-        <option value="">Select person</option>
-        {[...new Set(blocks.map(b=>b.name))].sort().map(n => <option key={n} value={n}>{n}</option>)}
-      </select>
-      <select value={day} onChange={e=>setDay(e.target.value as Day)} className="px-3 py-2 rounded-xl border">
-        {DAYS.map(d=><option key={d} value={d}>{d}</option>)}
-      </select>
+      <div className="grid grid-cols-2 gap-2">
+        <select value={who} onChange={e=>setWho(e.target.value)}
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
+          <option value="">Select person</option>
+          {[...new Set(blocks.map(b=>b.name))].sort().map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <select value={day} onChange={e=>setDay(e.target.value as Day)}
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
+          {DAYS.map(d=><option key={d} value={d}>{d}</option>)}
+        </select>
+      </div>
       <BreaksList name={who} day={day} blocks={blocks} />
     </>
   );
 }
 
 function BreaksList({ name, day, blocks }:{ name:string; day:Day; blocks: Block[]; }){
-  if(!name) return <p className="text-sm text-slate-500">Select a person</p>;
+  if(!name) return <p className="text-sm text-slate-500 dark:text-slate-400">Select a person</p>;
   const ivals = blocks.filter(b=>b.name===name && b.day===day).map(b=>[parseHHMM(b.start), parseHHMM(b.end)] as [number,number]);
   const gaps = gapsBetween(ivals);
-  if(!gaps.length) return <p className="text-sm text-slate-500">No breaks</p>;
+  if(!gaps.length) return <p className="text-sm text-slate-500 dark:text-slate-400">No breaks</p>;
   return (
-    <ul className="text-sm grid gap-1">
+    <ul className="text-sm grid gap-2">
       {gaps.map(([s,e],i)=>{
         const mins=e-s, h=Math.floor(mins/60), m=mins%60;
         const dur= h? `${h}h ${m}m` : `${m} mins`;
-        return <li key={i} className="px-2 py-1 rounded bg-slate-100">{fmt(s)}–{fmt(e)} ({dur})</li>;
+        return <li key={i} className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-900
+                                      dark:border-slate-800 dark:bg-slate-800 dark:text-slate-100">
+          {fmt(s)}–{fmt(e)} ({dur})
+        </li>;
       })}
     </ul>
   );
 }
 
-function CommonList({ day, time, names, byPersonDay }:{ day:Day; time:string; names:string[]; byPersonDay: Map<string,[number,number][]>; }){
+function CommonList({ day, time, names, byPersonDay }:{
+  day: Day; time: string; names: string[]; byPersonDay: Map<string,[number,number][]>;
+}){
   const t=parseHHMM(time); const rows:{name:string,start:number,end:number}[]=[];
   for(const n of names){
     const key=`${n}__${day}`; const ivals=byPersonDay.get(key)||[];
@@ -290,13 +367,16 @@ function CommonList({ day, time, names, byPersonDay }:{ day:Day; time:string; na
     else if(nextStart!=null) rows.push({name:n,start:0,end:nextStart});
     else if(prevEnd!=null) rows.push({name:n,start:prevEnd,end:24*60-1});
   }
-  if(!rows.length) return <p className="text-sm text-slate-500">No one free</p>;
+  if(!rows.length) return <p className="text-sm text-slate-500 dark:text-slate-400">No one free</p>;
   return (
-    <ul className="text-sm grid gap-1">
+    <ul className="text-sm grid gap-2">
       {rows.map(r=>{
         const mins=r.end-r.start, h=Math.floor(mins/60), m=mins%60;
         const dur= h? `${h}h ${m}m` : `${m} mins`;
-        return <li key={r.name} className="px-2 py-1 rounded bg-slate-100"><b>{r.name}</b> — {fmt(r.start)}–{fmt(r.end)} ({dur})</li>;
+        return <li key={r.name} className="px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-900
+                                          dark:border-slate-800 dark:bg-slate-800 dark:text-slate-100">
+          <b>{r.name}</b> — {fmt(r.start)}–{fmt(r.end)} ({dur})
+        </li>;
       })}
     </ul>
   );
@@ -308,34 +388,38 @@ function BlocksTable({ blocks, onDelete }:{ blocks: Block[]; onDelete:(id:string
   ), [blocks]);
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
       <table className="min-w-full text-sm">
         <thead>
-          <tr className="text-left bg-slate-100">
+          <tr className="text-left bg-sky-50/70 dark:bg-slate-800">
             <th className="p-2">Name</th>
             <th className="p-2">Day</th>
             <th className="p-2">Start</th>
             <th className="p-2">End</th>
-            <th className="p-2">Room</th>{/* NEW */}
+            <th className="p-2">Room</th>
             <th className="p-2 text-right">Actions</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="[&>tr:nth-child(even)]:bg-sky-50/40 dark:[&>tr:nth-child(even)]:bg-slate-900/40">
           {sorted.map(b=>(
-            <tr key={b.id} className="border-b">
+            <tr key={b.id} className="border-b border-slate-100 dark:border-slate-800">
               <td className="p-2">{b.name}</td>
               <td className="p-2">{b.day}</td>
               <td className="p-2">{b.start}</td>
               <td className="p-2">{b.end}</td>
               <td className="p-2">{b.room}</td>
               <td className="p-2 text-right">
-                <button onClick={()=>onDelete(b.id)} className="px-2 py-1 rounded bg-red-50 text-red-700 hover:bg-red-100">Delete</button>
+                <button onClick={()=>onDelete(b.id)}
+                        className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100
+                                   dark:bg-rose-900/30 dark:text-rose-200 dark:hover:bg-rose-900/50">
+                  Delete
+                </button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {!sorted.length && <p className="text-sm text-slate-500 mt-2">No blocks yet. Add some above or import CSV.</p>}
+      {!sorted.length && <p className="text-sm text-slate-600 dark:text-slate-400 mt-2 p-2">No blocks yet. Add some above or import CSV.</p>}
     </div>
   );
 }
