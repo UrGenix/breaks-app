@@ -479,3 +479,4 @@ function BlocksTable({ blocks, onDelete }:{ blocks: Block[]; onDelete:(id:string
   );
 }
 
+
