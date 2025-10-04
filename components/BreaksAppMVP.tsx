@@ -15,7 +15,7 @@ type Block = {
 
 /* --------------- Helpers --------------- */
 const DAYS: Day[] = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
-const dayIdx: Record<Day, number> = Object.fromEntries(DAYS.map((d,i)=>[d,i])) as any;
+const dayIdx: Record<Day, number> = Object.fromEntries(DAYS.map((d,i)=>[d,i])) as Record<Day, number>;
 
 function parseHHMM(s: string): number { const [h,m] = s.split(":").map(Number); return (h*60+m)|0; }
 function fmt(mins: number): string { const h=Math.floor(mins/60), m=mins%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`; }
@@ -30,6 +30,11 @@ function gapsBetween(intervals: [number, number][]): [number, number][] {
   const merged=mergeIntervals(intervals); const gaps:[number,number][]=[];
   for(let i=0;i<merged.length-1;i++){ const a=merged[i], b=merged[i+1]; if(a[1]<b[0]) gaps.push([a[1],b[0]]); }
   return gaps;
+}
+function getBuilding(room?: string): string {
+  if (!room) return "";
+  const first = room.trim()[0]?.toUpperCase() || "";
+  return /^[A-Z]$/.test(first) ? first : "";
 }
 
 /* -------- CSV helpers (Name,Day,Start,End,Room) -------- */
@@ -66,14 +71,13 @@ function fromCSV(text: string): Block[] {
 }
 
 /* --------------- Local storage --------------- */
-const LS_KEY = "breaks-mvp-blocks@v2";
-const THEME_KEY = "breaks-theme"; // "light" | "dark" | "system"
+const LS_KEY = "breaks-mvp-blocks@v3";
+const THEME_KEY = "breaks-theme"; // "light" | "dark"
 
 /* ----------- Theme hook (dark/light) ----------- */
 function useTheme(){
   const [mode, setMode] = useState<"light"|"dark">("light");
   useEffect(()=>{
-    // initial: respect saved pref or system
     const saved = localStorage.getItem(THEME_KEY);
     const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
     const initial = (saved==="dark"||saved==="light") ? saved : (prefersDark? "dark":"light");
@@ -107,6 +111,7 @@ export default function BreaksAppMVP(){
     const d=new Date(); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
   });
   const [roomFilter, setRoomFilter] = useState<string>("");
+  const [buildingFilter, setBuildingFilter] = useState<string>("");
 
   // load/save
   useEffect(()=>{ try{ const raw=localStorage.getItem(LS_KEY); if(raw) setBlocks(JSON.parse(raw)); }catch{} },[]);
@@ -114,6 +119,7 @@ export default function BreaksAppMVP(){
 
   const people = useMemo(()=> Array.from(new Set(blocks.map(b=>b.name))).sort(), [blocks]);
   const rooms = useMemo(()=> ["", ...Array.from(new Set(blocks.map(b=>b.room).filter(Boolean))).sort()], [blocks]);
+  const buildings = useMemo(()=> ["", ...Array.from(new Set(blocks.map(b=>getBuilding(b.room)).filter(Boolean))).sort()], [blocks]);
 
   const byPersonDay = useMemo(()=>{
     const map = new Map<string, [number,number][]>();
@@ -138,10 +144,14 @@ export default function BreaksAppMVP(){
   function deleteBlock(id:string){ setBlocks(prev=>prev.filter(b=>b.id!==id)); }
   function clearAll(){ if(confirm("Clear all blocks?")) setBlocks([]); }
 
-  // room filter helper
+  // filters
   function personHasRoomToday(name: string, dayQ: Day, roomQ: string){
     if(!roomQ) return true;
     return blocks.some(b => b.name===name && b.day===dayQ && (b.room||"").toLowerCase()===roomQ.toLowerCase());
+  }
+  function personHasBuildingToday(name: string, dayQ: Day, buildingQ: string){
+    if (!buildingQ) return true;
+    return blocks.some(b => b.name===name && b.day===dayQ && getBuilding(b.room)===buildingQ);
   }
 
   // CSV
@@ -235,20 +245,32 @@ export default function BreaksAppMVP(){
           <div className="rounded-2xl border shadow-sm p-4 bg-white/80 backdrop-blur
                           dark:bg-slate-900/70 dark:border-slate-800">
             <h3 className="font-semibold mb-3">Who’s free?</h3>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               <select value={queryDay} onChange={e=>setQueryDay(e.target.value as Day)}
                       className="px-3 py-2 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
                 {DAYS.map(d=><option key={d} value={d}>{d}</option>)}
               </select>
               <input value={queryTime} onChange={e=>setQueryTime(e.target.value)} type="time"
                      className="px-3 py-2 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800" />
+              <select value={buildingFilter} onChange={e=>setBuildingFilter(e.target.value)}
+                      className="px-3 py-2 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
+                {buildings.map(b => <option key={b||"__all"} value={b}>{b? `${b} building` : "All buildings"}</option>)}
+              </select>
               <select value={roomFilter} onChange={e=>setRoomFilter(e.target.value)}
                       className="px-3 py-2 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
                 {rooms.map(r => <option key={r||"__all"} value={r}>{r? r : "All rooms"}</option>)}
               </select>
             </div>
-            <FreeList blocks={blocks} day={queryDay} time={queryTime} roomFilter={roomFilter}
-                      roomCheck={(n,d,r)=>blocks.some(b=>b.name===n && b.day===d && (b.room||"").toLowerCase()===r.toLowerCase())} />
+
+            <FreeList
+              blocks={blocks}
+              day={queryDay}
+              time={queryTime}
+              roomFilter={roomFilter}
+              buildingFilter={buildingFilter}
+              roomCheck={(n,d,r)=>blocks.some(b=>b.name===n && b.day===d && (b.room||"").toLowerCase()===r.toLowerCase())}
+              buildingCheck={(n,d,b)=>blocks.some(x=>x.name===n && x.day===d && getBuilding(x.room)===b)}
+            />
           </div>
 
           {/* Breaks for a person */}
@@ -276,25 +298,58 @@ export default function BreaksAppMVP(){
 }
 
 /* ---------------- subcomponents ---------------- */
-function FreeList({ blocks, day, time, roomFilter, roomCheck }:{
-  blocks: Block[]; day: Day; time: string; roomFilter: string; roomCheck: (name:string, day:Day, room:string)=>boolean;
+function FreeList({
+  blocks, day, time, roomFilter, buildingFilter, roomCheck, buildingCheck
+}:{
+  blocks: Block[];
+  day: Day;
+  time: string;
+  roomFilter: string;
+  buildingFilter: string;
+  roomCheck: (name:string, day:Day, room:string)=>boolean;
+  buildingCheck: (name:string, day:Day, building:string)=>boolean;
 }){
   const t = parseHHMM(time);
   const everyone = useMemo(()=> Array.from(new Set(blocks.map(b=>b.name))).sort(), [blocks]);
   const busy = new Set<string>();
+
   for (const b of blocks) {
     if (b.day!==day) continue;
     const s = parseHHMM(b.start), e = parseHHMM(b.end);
     if (s <= t && t < e) busy.add(b.name);
   }
+
   let free = everyone.filter(n=>!busy.has(n));
+
+  if (buildingFilter) free = free.filter(n => buildingCheck(n, day, buildingFilter));
   if (roomFilter) free = free.filter(n => roomCheck(n, day, roomFilter));
+
+  // compute "next window" chip per person
+  const nextInfo: Record<string, string> = {};
+  for (const n of free) {
+    const todays = blocks
+      .filter(b=>b.name===n && b.day===day)
+      .map(b=>({ s: parseHHMM(b.start), e: parseHHMM(b.end), room: b.room }))
+      .sort((a,b)=>a.s-b.s);
+    // find the first interval that starts after t
+    const next = todays.find(iv => iv.s > t);
+    if (next) nextInfo[n] = `next: ${fmt(next.s)} ${next.room || ""}`.trim();
+    else nextInfo[n] = "free rest of day";
+  }
 
   return (
     <ul className="text-sm grid gap-2">
       {free.length
-        ? free.map(n=> <li key={n} className="px-3 py-2 rounded-xl border border-teal-200 bg-teal-50 text-teal-900
-                                              dark:border-slate-800 dark:bg-slate-800 dark:text-slate-100">{n}</li>)
+        ? free.map(n=> (
+            <li key={n} className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-teal-200 bg-teal-50 text-teal-900
+                                              dark:border-slate-800 dark:bg-slate-800 dark:text-slate-100">
+              <span>{n}</span>
+              <span className="text-xs px-2 py-1 rounded-lg border border-slate-200 bg-white/80
+                               dark:border-slate-700 dark:bg-slate-900/60">
+                {nextInfo[n]}
+              </span>
+            </li>
+          ))
         : <li className="text-slate-500 dark:text-slate-400">No one</li>}
     </ul>
   );
