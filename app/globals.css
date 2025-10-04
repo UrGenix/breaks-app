@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Optional: a tiny reset + body font */
-:root { color-scheme: light dark; }
-html, body { height: 100%; }
+/* improve focus visibility */
+:root { --ring: 0 0% 10%; }
+:focus-visible { outline: 2px solid hsl(var(--ring) / 0.25); outline-offset: 2px; }
+
+/* nicer font rendering */
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
