@@ -1,13 +1,18 @@
-import withPWA from "next-pwa";
+// next.config.mjs
+import withPWA from 'next-pwa';
 
-const isProd = process.env.NODE_ENV === "production";
-
-/** @type {import('next').NextConfig} */
-const nextConfig = {};
+const isProd = process.env.NODE_ENV === 'production';
 
 export default withPWA({
-  dest: "public",
-  disable: !isProd,
-  register: true,
-  skipWaiting: true,
-})(nextConfig);
+  experimental: {
+    // keep whatever you already have here
+  },
+  pwa: {
+    dest: 'public',
+    register: true,
+    skipWaiting: true,      // <-- important
+    disable: !isProd,       // no SW in dev
+    cleanupOutdatedCaches: true,
+    dynamicStartUrl: true,
+  },
+});
