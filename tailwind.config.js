@@ -4,9 +4,9 @@ module.exports = {
     "./app/**/*.{js,ts,jsx,tsx}",
     "./components/**/*.{js,ts,jsx,tsx}",
   ],
-  darkMode: "class", // or "media" if you prefer system-only
   theme: {
     extend: {},
   },
+  darkMode: 'class',
   plugins: [],
-};
+}
